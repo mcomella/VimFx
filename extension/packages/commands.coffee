@@ -140,6 +140,7 @@ command_K_gt = (vim) ->
   if rootWindow = utils.getRootWindow vim.window
     rootWindow.gBrowser.tabContainer.advanceSelectedTab(1, true);
 
+# Open homepage
 command_gh = (vim) ->
   homepage_url = getFirefoxPref 'browser.startup.homepage'
   vim.window.location.assign homepage_url
@@ -197,6 +198,10 @@ command_F = (vim) ->
       utils.simulateClick marker.element, { metaKey: true, ctrlKey: true }
 
     vim.enterHintsMode markers, cb
+
+# Focus first input element on page
+command_gi = (vim) ->
+  vim.enterFocusInputMode()
 
 # Move current tab to the left
 command_cJ = (vim) ->
@@ -298,6 +303,7 @@ commandGroups =
   'browse':
     'f':        [ command_f,      _('help_command_f') ]
     'F':        [ command_F,      _('help_command_F') ]
+    'g,i':      [ command_gi,     _('help_command_gi') ]
     'H':        [ command_H,      _('help_command_H') ]
     'L':        [ command_L,      _('help_command_L') ]
   'misc': 

@@ -23,6 +23,9 @@ class Vim
     @cb       = undefined
     @findStr  = ""
 
+  enterFocusInputMode: ->
+    console.log 'Enter focus input mode.'
+
   enterFindMode: ->
     @mode = MODE_FIND
 
