@@ -9,6 +9,7 @@ HTMLDocument        = Ci.nsIDOMHTMLDocument
 HTMLElement         = Ci.nsIDOMHTMLElement
 Window              = Ci.nsIDOMWindow
 ChromeWindow        = Ci.nsIDOMChromeWindow
+XPathResult         = Ci.nsIDOMXPathResult
 
 _sss  = Cc["@mozilla.org/content/style-sheet-service;1"].getService(Ci.nsIStyleSheetService)
 _clip = Cc["@mozilla.org/widget/clipboard;1"].getService(Ci.nsIClipboard)
@@ -228,6 +229,83 @@ browserSearchSubmission = (str) ->
   engine = ss.currentEngine or ss.defaultEngine
   return engine.getSubmission(str, null)
 
+# via vimium.
+xpath =
+  # Takes an array of XPath selectors, adds the necessary namespaces (currently only XHTML), and applies them
+  # to the document root. The namespaceResolver in evaluateXPath should be kept in sync with the namespaces
+  # here.
+  makeXPath: (elementArray) ->
+    xpathArr = []
+    for i of elementArray
+      xpathArr.push("//" + elementArray[i], "//xhtml:" + elementArray[i])
+    xpathArr.join(" | ")
+
+  evaluateXPath: (vim, xpathStr, resultType) ->
+    namespaceResolver = (namespace) ->
+      if (namespace == "xhtml") then "http://www.w3.org/1999/xhtml" else null
+    vim.window.document.evaluate(xpathStr, vim.window.document.documentElement, namespaceResolver, resultType, null)
+
+# The XPath for the the types in <input type="..."> that we consider for the focusInputCharHandler
+# function. Should we include the HTML5 date pickers here?
+xpath.textInputXPath = (->
+  textInputTypes = ["text", "search", "email", "url", "number", "password"]
+  inputElements = ["input[" +
+    "(" + textInputTypes.map((type) -> '@type="' + type + '"').join(" or ") + "or not(@type))" +
+    " and not(@disabled or @readonly)]",
+    "textarea", "*[@contenteditable='' or translate(@contenteditable, 'TRUE', 'true')='true']"]
+  xpath.makeXPath(inputElements)
+)()
+
+# Returns the first visible clientRect of an element if it exists. Otherwise it returns null.
+# via vimium.
+getVisibleClientRect = (vim, element) ->
+  # Note: this call will be expensive if we modify the DOM in between calls.
+  clientRects = element.getClientRects()
+
+  for clientRect in clientRects
+    if (clientRect.top < -2 || clientRect.top >= vim.window.innerHeight - 4 ||
+        clientRect.left < -2 || clientRect.left  >= vim.window.innerWidth - 4)
+      continue
+
+    if (clientRect.width < 3 || clientRect.height < 3)
+      continue
+
+    # eliminate invisible elements (see test_harnesses/visibility_test.html)
+    computedStyle = vim.window.getComputedStyle(element, null)
+    if (computedStyle.getPropertyValue('visibility') != 'visible' ||
+        computedStyle.getPropertyValue('display') == 'none' ||
+        computedStyle.getPropertyValue('opacity') == '0')
+      continue
+
+    return clientRect
+
+  for clientRect in clientRects
+    # If the link has zero dimensions, it may be wrapping visible
+    # but floated elements. Check for this.
+    if (clientRect.width == 0 || clientRect.height == 0)
+      # TODO: Should this be clientRect.children?
+      for child in element.children
+        computedStyle = vim.window.getComputedStyle(child, null)
+        # Ignore child elements which are not floated and not absolutely positioned for parent elements with
+        # zero width/height
+        continue if (computedStyle.getPropertyValue('float') == 'none' &&
+          computedStyle.getPropertyValue('position') != 'absolute')
+        childClientRect = @getVisibleClientRect(vim, child)
+        continue if (childClientRect == null)
+        return childClientRect
+  null
+
+# Returns a list of all visible <input> elements on the screen.
+# via vimium.
+getVisibleInputs = (vim) ->
+  resultSet = xpath.evaluateXPath(vim, xpath.textInputXPath, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE)
+  return visibleInputs =
+      for i in [0...resultSet.snapshotLength] by 1
+        element = resultSet.snapshotItem(i)
+        rect = getVisibleClientRect(vim, element)
+        continue if rect == null
+        { element: element, rect: rect }
+
 exports.Bucket                  = Bucket
 exports.getCurrentTabWindow     = getCurrentTabWindow
 exports.getEventWindow          = getEventWindow
@@ -251,3 +329,6 @@ exports.getVersion              = getVersion
 exports.parseHTML               = parseHTML
 exports.isURL                   = isURL
 exports.browserSearchSubmission = browserSearchSubmission
+exports.xpath                   = xpath
+exports.getVisibleClientRect    = getVisibleClientRect
+exports.getVisibleInputs        = getVisibleInputs
