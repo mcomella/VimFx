@@ -27,6 +27,17 @@ keyStrFromEvent = (event) ->
 
   return keyStr
 
+# Returns true if VimFx should handle a keypress or keydown event based on
+# general criteria.
+shouldHandleKeyEvent = (vim, keyStr, isEditable) ->
+  if not isEditable
+    return true
+  if keyStr == 'Esc'
+    return true
+  if vim.focusInput.isEnabled() and (keyStr == 'Tab' or keyStr == 'Shift-Tab')
+    return true
+  return false
+
 # The following listeners are installed on every top level Chrome window
 windowsListener = 
   'keydown': (event) ->
@@ -36,21 +47,20 @@ windowsListener =
 
     try
       isEditable = utils.isElementEditable event.originalTarget
+      keyStr = keyStrFromEvent(event)
+      window = utils.getCurrentTabWindow event
+      vim = vimBucket.get(window) if window?
+      return if not vim?
 
-      keyStr = keyStrFromEvent(event) 
+      # We only handle the key if it's recognized by `keyCharFromCode` and
+      # meets the general criteria.
+      if keyStr and shouldHandleKeyEvent(vim, keyStr, isEditable)
+        # No action if blacklisted
+        if vim.blacklisted
+          return
 
-      # We only handle the key if it's recognized by `keyCharFromCode`
-      # and if there is no focused editable element # or if it's the *Esc* key, 
-      # which will remove the focus from the currently focused element
-      if keyStr and (not isEditable or keyStr == 'Esc')
-        if window = utils.getCurrentTabWindow event
-          if vim = vimBucket.get(window)
-            # No action if blacklisted
-            if vim.blacklisted
-              return
-
-            if vim.handleKeyDown(event, keyStr) and keyStr != 'Esc'
-              suppressEvent event
+        if vim.handleKeyDown(event, keyStr) and keyStr != 'Esc'
+          suppressEvent event
     catch err
       console.log err, 'keydown'
       console.stacktrace()
@@ -65,31 +75,30 @@ windowsListener =
 
       # Try to execute keys that were accumulated so far.
       # Suppress event if there is a matching command.
-      if window = utils.getCurrentTabWindow event
-        if vim = vimBucket.get(window)
+      window = utils.getCurrentTabWindow event
+      vim = vimBucket.get(window) if window?
+      return if not vim?
 
-          # No action on blacklisted locations
-          if vim.blacklisted
-            return
-          
-          # Blur from any active element on Esc. Calling before `handleKeyPress` 
-          # because `vim.keys` will be reset afterwards`
-          blur_on_esc = vim.lastKeyStr == 'Esc' and getPref 'blur_on_esc'
+      # No action on blacklisted locations
+      if vim.blacklisted
+        return
 
-          # Process event if there is no editable element in focus
-          # Or last key was Esc key
-          if not isEditable or vim.lastKeyStr == 'Esc'
-            result = vim.handleKeyPress event
+      # Blur from any active element on Esc. Calling before `handleKeyPress`
+      # because `vim.keys` will be reset afterwards`
+      blur_on_esc = vim.lastKeyStr == 'Esc' and getPref 'blur_on_esc'
 
-          # If there was some processing done then suppress the eveng
-          # unless it's the Esc key
-          if result and vim.lastKeyStr != 'Esc'
-            suppressEvent event
+      if shouldHandleKeyEvent vim, vim.lastKeyStr, isEditable
+        result = vim.handleKeyPress event
 
-          # Calling after the command has been executed
-          if blur_on_esc
-            cb = -> event.originalTarget?.ownerDocument?.activeElement?.blur()
-            window.setTimeout cb, 0
+      # If there was some processing done then suppress the eveng
+      # unless it's the Esc key
+      if result and vim.lastKeyStr != 'Esc'
+        suppressEvent event
+
+      # Calling after the command has been executed
+      if blur_on_esc
+        cb = -> event.originalTarget?.ownerDocument?.activeElement?.blur()
+        window.setTimeout cb, 0
 
     catch err
       console.log err, 'keypress'

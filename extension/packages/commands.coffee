@@ -388,8 +388,35 @@ findCharHandler = (vim, keyStr, charCode) ->
   else
     find.setFindStr vim.window.document, "#{ vim.findStr } (Not Found)"
 
+# Focus the first input element on the page. Tabbing will shift focus to the next input element.
+# Pressing any other key will remove the special tab behavior. A keyStr of undefined means the
+# focus input initiation keyboard shortcut was just entered.
+focusInputCharHandler = (vim, keyStr, charCode) ->
+  # TODO: How does focusInput get cancelled.
+  fi = vim.focusInput # For readability.
 
-exports.hintCharHandler   = hintCharHandler
-exports.findCharHandler   = findCharHandler
-exports.commands          = commands
-exports.commandsHelp      = commandsHelp
+  # A keystroke besides 'Tab', 'Shift-Tab' or the initial focus input mode
+  # shortcut was used.
+  result = false if keyStr? and keyStr != 'Tab' and keyStr != 'Shift-Tab'
+  # No valid <input> exist.
+  result = true if not result? and fi.visibleInputs.length == 0
+  if result?
+    fi.visibleInputs = []
+    vim.enterNormalMode()
+    return result
+
+  if keyStr == 'Tab'
+    fi.selectedIndex += 1
+    fi.selectedIndex = 0 if fi.selectedIndex >= fi.visibleInputs.length # Wrap around.
+  else if keyStr == 'Shift-Tab'
+    fi.selectedIndex -= 1
+    fi.selectedIndex = fi.visibleInputs.length - 1 if fi.selectedIndex < 0 # Wrap around.
+
+  fi.visibleInputs[fi.selectedIndex].element.focus()
+  return true
+
+exports.hintCharHandler       = hintCharHandler
+exports.findCharHandler       = findCharHandler
+exports.focusInputCharHandler = focusInputCharHandler
+exports.commands              = commands
+exports.commandsHelp          = commandsHelp
